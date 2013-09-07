@@ -4,46 +4,73 @@
 %%%Brief: Implementation of knight's tour problem, 
 %%%       simply for practicing Erlang.
 %%%Built Date: 2013/08/23
-%%%Version: 1
+%%%Last Revised Date: 2013/09/07
+%%%Version: 2
 %%%
 %%%Exports: solve({point, X, Y}, Size)
-%%%         returns a list of traces of the knight's each move
-%%%         starting from the given point X, Y.
+%%%         Brief: solve the knight's tour problem on board with the specified size.
+%%%         Return: returns a list consisting of the traces of knight's each move.
+%%%         Parameter:
+%%%             {point, X, Y}: the starting point X, Y.
+%%%             Size: the size of the board on which the knight tours.
 
 -module(knight_tour).
 -export([solve/2]).
 
-%%Brief: returns a list of traces of the knight's each move
-%%       starting from the given point X, Y.
-%%Parameter: 
-%%       {point, X, Y}: the point where the knight starts.
-%%       Size: the width of the board on which the knight move.
-solve({point, X, Y}, Size) when is_integer(Size), Size > 0,
-        is_integer(X), 0 =< X, X < Size, is_integer(Y), 0 =< Y, Y < Size ->
-    VisitBoard = array:new(Size, {default, array:new(Size, {default, false})}),
-    tour({point, X, Y}, VisitBoard, [], Size).
-    
-solve({none}, _, Acc, _) ->
-    lists:reverse(Acc);   
-solve({point, X, Y}, VisitBoard, Acc, Size) when is_integer(Size), Size > 0,
-       is_integer(X), 0 =< X, X < Size, is_integer(Y), 0 =< Y, Y < Size ->
-    NextMove = next_move({point, X, Y}, VisitBoard, Size),
-    solve(NextMove, set_elem(X, Y, true, VisitBoard), [{point, X, Y}|Acc], Size).
+-vsn(2).
 
-%%Brief: returns which point the knight should go. {none} if no further moves can be done.
+-define(is_valid_size(Size), is_integer(Size) andalso Size > 0).
+-define(is_valid_point(X, Y, Size), 
+        is_integer(X) andalso 0 =< X andalso X < Size andalso
+        is_integer(Y) andalso 0 =< Y andalso Y < Size).
+
+%%%Brief: solve knight's tour problem on board with the specified size.
+%%%Return: a list consisting of the traces of knight's each move.
+%%%Parameter:
+%%%    {point, X, Y}: the starting point X, Y.
+%%%    Size: the size of the board on which the knight tours.
+solve({point, X, Y} = Pt, Size) 
+        when ?is_valid_size(Size), ?is_valid_point(X, Y, Size) ->
+    VisitBoard = array:new(Size, {default, array:new(Size, {default, false})}),
+    solve(Pt, VisitBoard, [], Size).
+    
+solve(none, _, Acc, _) ->
+    lists:reverse(Acc);   
+solve({point, X, Y} = Pt, VisitBoard, Acc, Size)
+        when ?is_valid_size(Size), ?is_valid_point(X, Y, Size) ->
+    NextMove = next_move(Pt, VisitBoard, Size),
+    solve(NextMove, set_elem(X, Y, true, VisitBoard), [Pt|Acc], Size).
+
+%%Brief: determines the most efficient move of the given point X, Y.
+%%Return: point that the knight should go, or atom 'none' if no further moves can be done.
 %%Algorithm: an greedy-based approach, which will alway choose the point with the highest weight
-%%           among all the possible move. the weight of the given point X, Y is determined by
+%%           among all the possible moves. the weight of the given point X, Y is determined by
 %%           how many possible moves can the knight make from the point X, Y. additionally,
 %%           because the knight cannot visit the same point twice, the possible move of X, Y will be
 %%           (all adjacent points to point X, Y on the board) ^ (all points on the board not visited yet).
-next_move({point, X, Y}, VisitBoard, Size) when is_integer(Size), Size > 0,
-       is_integer(X), 0 =< X, X < Size, is_integer(Y), 0 =< Y, Y < Size ->
-    PossibMove = [[get_weight({point, P, Q}, VisitBoard, Size), {point, P, Q}] || 
-            {point, P, Q} <- get_possible_move({point, X, Y}, VisitBoard, Size)],
+next_move({point, X, Y} = Pt, VisitBoard, Size)
+        when ?is_valid_size(Size), ?is_valid_point(X, Y, Size) ->
+    PossibMove = [{R, get_weight(R, VisitBoard, Size)} ||
+            R <- get_possible_move(Pt, VisitBoard, Size)],
     case PossibMove of
-        [] -> {none};
-        _  -> [_, NextMove] = lists:min(PossibMove),
-              NextMove
+        [] -> none;
+        _ -> {NextMove, _Weight} = min_elem(
+                    fun({_, WeightX}, {_, WeightY}) -> WeightX =< WeightY end, PossibMove),
+             NextMove
+    end.
+
+%%Brief: find the minimun element of the given list.
+%%Return: minimun element of the given list.
+%%Parameter:
+%%        F: ordering function F.
+min_elem(F, [H|T]) ->
+    min_elem(F, T, H).
+
+min_elem(_, [], Min) -> Min;
+min_elem(F, [H|T], Min) -> 
+    case F(H, Min) of
+        true -> min_elem(F, T, H);
+        false -> min_elem(F, T, Min)
     end.
 
 %%Brief: simply wrapping a one-dimensional array getter into a 2d one.
@@ -54,43 +81,34 @@ get_elem(Row, Col, Array) when is_integer(Row), is_integer(Col) ->
 set_elem(Row, Col, Elem, Array) when is_integer(Row), is_integer(Col) ->
     array:set(Row, array:set(Col, Elem, array:get(Row, Array)), Array).
 
-%%Brief: returns a list of points, among all the 9 adjacent points to point X, Y, 
-%%       whose coordinates fall into the boundary of the board.
-%%Parameter: 
-%%       {point, X, Y}: the point where the knight starts.
-%%       Size: the width of the board on which the knight move.
-get_neighbor({point, X, Y}, Size) when is_integer(Size), Size > 0,
-        is_integer(X), 0 =< X, X < Size, is_integer(Y), 0 =< Y, Y < Size ->
+%%Brief: get all adjacent point of the given point X, Y.
+%%Return: a list of points, among all the 9 adjacent points to point X, Y, 
+%%        whose coordinates fall into the boundary of the board.
+get_neighbor({point, X, Y}, Size) 
+        when ?is_valid_size(Size), ?is_valid_point(X, Y, Size) ->
     Candidate = [{point, X-2, Y-1}, {point, X-2, Y+1}, {point, X-1, Y+2}, {point, X+1, Y+2}, {point, X+2, Y+1},
             {point, X+2, Y-1}, {point, X+1, Y-2}, {point, X-1, Y-2}],
-    [{point, P, Q} || {point, P, Q} <- Candidate, is_valid({point, P, Q}, Size)].
+    [R || {point, _P, _Q} = R <- Candidate, is_valid(R, Size)].
 
-%%Brief: returns a list of points, among all the 9 adjacent points to the given point X, Y, 
-%%       whose coordinates fall into the boundary of the board, and who haven't been visited yet.
+%%Brief: get all available moves from the given point X, Y.
+%%Return: a list of points, among all the 9 adjacent points to the given point X, Y, 
+%%        whose coordinates fall into the boundary of the board, and who haven't been visited yet.
 %%Parameter: 
-%%       {point, X, Y}: the point where the knight starts.
-%%       VisitBoard: a 2d array having same size as the board of kight's tour.
-%%                   value of each element is boolean storing whether knight visited this point.
-%%       Size: the width of the board on which the knight move.
-get_possible_move({point, X, Y}, VisitBoard, Size) when is_integer(Size), Size > 0,
-        is_integer(X), 0 =< X, X < Size, is_integer(Y), 0 =< Y, Y < Size ->
-    [{point, P, Q} || {point, P, Q} <- get_neighbor({point, X, Y}, Size), get_elem(P, Q, VisitBoard) =:= false].
+%%       VisitBoard: a 2d array having the same size as the board on which the knight moves.
+%%                   value of each element is boolean whose value is determined by
+%%                   whether knight has visited this point.
+get_possible_move({point, X, Y} = Pt, VisitBoard, Size) 
+        when ?is_valid_size(Size), ?is_valid_point(X, Y, Size) ->
+    [R || {point, P, Q} = R <- get_neighbor(Pt, Size), get_elem(P, Q, VisitBoard) =:= false].
 
-%%Brief: returns boolean of whether the given point X, Y fall into the boundary of the board.
-%%Parameter: 
-%%       {point, X, Y}: the point where the knight starts.
-%%       Size: the width of the board on which the knight move.
-is_valid({point, X, Y}, Size) when is_integer(Size), Size > 0 ->
-        is_integer(X) andalso 0 =< X andalso X < Size andalso 
-                is_integer(Y) andalso 0 =< Y andalso Y < Size.
+%%Brief: test if the given point X, Y has a valid coordinate on the board.
+%%Return: boolean of whether the given point X, Y fall into the boundary of the board.
+is_valid({point, X, Y}, Size) when ?is_valid_size(Size) ->
+    ?is_valid_point(X, Y, Size).
 
-%%Brief: returns how many points can the knight go from the given point X, Y, i.e., 
-%%       the weight of the point.
-%%Parameter: 
-%%       {point, X, Y}: the point where the knight starts.
-%%       VisitBoard: a 2d array having same size as the board of kight's tour.
-%%                   value of each element is boolean storing whether knight visited this point.
-%%       Size: the width of the board on which the knight move.
-get_weight({point, X, Y}, VisitBoard, Size) when is_integer(Size), Size > 0,
-       is_integer(X), 0 =< X, X < Size, is_integer(Y), 0 =< Y, Y < Size ->
-    length(get_possible_move({point, X, Y}, VisitBoard, Size)).
+%%Brief: carry out the weight of the given point.
+%%Return: how many points can the knight go from the given point X, Y, i.e., 
+%%        the weight of the point.
+get_weight({point, X, Y} = Pt, VisitBoard, Size) 
+        when ?is_valid_size(Size), ?is_valid_point(X, Y, Size) ->
+    length(get_possible_move(Pt, VisitBoard, Size)).
